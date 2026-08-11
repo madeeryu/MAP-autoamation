@@ -360,7 +360,36 @@ async def cek_stok_kosong(page: Page) -> bool:
 # STEP-STEP TRANSAKSI
 # ─────────────────────────────────────────────
 
+async def _input_nik_terbuka(page: Page) -> bool:
+    """True jika field input NIK sedang terlihat (modal 'Masukkan NIK' terbuka)."""
+    for sel in SEL["input_nik"]:
+        try:
+            el = page.locator(sel).first
+            if await el.count() > 0 and await el.is_visible():
+                return True
+        except Exception:
+            pass
+    return False
+
+
 async def klik_catat_penjualan(page: Page) -> bool:
+    # KASUS PENTING: setelah transaksi DITOLAK, sering ada modal sisa yang masih
+    # terbuka (mis. "Masukkan NIK / pendaftaran"). Kalau dibiarkan, tombol
+    # "Catat Penjualan" tertutup modal → bot nge-scroll & macet.
+    # (User konfirmasi: menutup modal dulu bikin bot lanjut normal.)
+    # Jadi TUTUP dulu modal sisa sebelum klik Catat Penjualan.
+    for _ in range(3):
+        if not await _input_nik_terbuka(page):
+            break
+        print("  [STEP 1] Ada modal sisa — menutup dulu")
+        await tutup_modal(page)
+        if await _input_nik_terbuka(page):
+            try:
+                await page.keyboard.press("Escape")   # fallback kalau TUTUP gagal
+            except Exception:
+                pass
+        await asyncio.sleep(0.6)
+
     # Pastikan menu utama benar-benar ready dulu (hindari klik saat halaman
     # belum selesai render setelah login/kembali).
     await tunggu_menu_utama(page, timeout=15_000)
