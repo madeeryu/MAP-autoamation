@@ -143,6 +143,16 @@ class SessionPool:
                     if candidate.exists():
                         excel_path = str(candidate)
                         break
+            elif not Path(excel_path).exists():
+                # Path absolut tapi tidak ada (mis. dipindah ke laptop lain) →
+                # cari file dengan nama sama di folder exe / cwd.
+                nama = Path(excel_path).name
+                for base in [project_root, cwd]:
+                    candidate = Path(base) / nama
+                    if candidate.exists():
+                        print(f"[Pool] Path absolut tak ada, pakai: {candidate}")
+                        excel_path = str(candidate)
+                        break
 
             print(f"[Pool] Membaca Excel: {excel_path}")
             mgr = PelangganManager(excel_path=excel_path)

@@ -198,6 +198,20 @@ def cek_dependencies():
 # ─────────────────────────────────────────────
 
 def main():
+    # ── Log ke file saat frozen/windowed (console disembunyikan) ──
+    # Semua print (pool, runner, captcha) + error terekam ke MAP_Automation.log
+    # di sebelah exe, supaya masalah tetap bisa didiagnosa tanpa console.
+    if getattr(sys, 'frozen', False):
+        try:
+            from datetime import datetime
+            _logf = open(Path(sys.executable).parent / "MAP_Automation.log",
+                         "a", encoding="utf-8", buffering=1)
+            sys.stdout = _logf
+            sys.stderr = _logf
+            print(f"\n{'='*55}\n=== START {datetime.now():%Y-%m-%d %H:%M:%S} ===\n{'='*55}")
+        except Exception:
+            pass
+
     if not getattr(sys, 'frozen', False):
         kurang = cek_dependencies()
         if kurang:
