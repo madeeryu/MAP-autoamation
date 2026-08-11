@@ -1,0 +1,38 @@
+# ─────────────────────────────────────────────
+# DATA SENSITIF — JANGAN PERNAH di-upload
+# ─────────────────────────────────────────────
+# Data NIK pelanggan
+Data_NIK_Konsumen_LPG.xlsx
+*.xlsx
+history_*.xlsx
+
+# Folder data: config berisi PASSWORD login, cooldown/transaksi berisi NIK
+data/
+
+# Kredensial
+.env
+
+# ─────────────────────────────────────────────
+# Output runtime
+# ─────────────────────────────────────────────
+log_transaksi_harian.json
+progress_hari_ini.json
+laporan_harian.json
+
+# Debug (screenshot bisa memuat NIK / captcha)
+debug_*.png
+screenshot_*.png
+*.log
+
+# ─────────────────────────────────────────────
+# Build / cache
+# ─────────────────────────────────────────────
+dist/
+build/
+__pycache__/
+*.py[cod]
+*.spec
+ms-playwright/
+.claude/
+.venv/
+venv/
