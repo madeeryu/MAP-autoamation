@@ -88,9 +88,10 @@ SEL = {
     "label_rt":  "label.styles_container__Cnm0i:has(input[value='Rumah Tangga'])",
     "label_um":  "label.styles_container__Cnm0i:has(input[value='Usaha Mikro'])",
     "tombol_lanjutkan_transaksi": [
-        "button.styles_primary__k_AUJ",
+        # Prioritaskan TEKS (class styles_primary__k_AUJ juga dipakai "LENGKAPI NIB")
         "button:has-text('LANJUTKAN TRANSAKSI')",
         "button:has-text('Lanjutkan Transaksi')",
+        "button.styles_primary__k_AUJ:has-text('LANJUTKAN')",
         "button:has-text('LANJUTKAN')",
     ],
     "tombol_tutup": [
@@ -452,11 +453,39 @@ async def input_nik(page: Page, nik: str) -> str:
     return "LANJUT"
 
 
+async def lewati_nib_reminder(page: Page) -> bool:
+    """
+    Modal reminder NIB (khusus Usaha Mikro): "Segera Lengkapi NIB..." dengan
+    tombol "LENGKAPI NIB" dan "NANTI SAJA, LANJUT TRANSAKSI".
+
+    Ini BUKAN penolakan — bisa dilewati. Klik "NANTI SAJA, LANJUT TRANSAKSI"
+    (berbasis TEKS, bukan class, karena class-nya sama dengan tombol lain) agar
+    transaksi tetap lanjut. Return True jika modal dilewati.
+    """
+    for sel in [
+        "button:has-text('NANTI SAJA')",
+        "button:has-text('LANJUT TRANSAKSI')",
+        "button:has-text('Nanti Saja')",
+    ]:
+        try:
+            el = page.locator(sel).first
+            if await el.count() > 0 and await el.is_visible():
+                await el.click()
+                print("  [NIB] Reminder NIB dilewati → NANTI SAJA, LANJUT TRANSAKSI")
+                await asyncio.sleep(0.8)
+                return True
+        except Exception:
+            pass
+    return False
+
+
 async def handle_modal_pelanggan(page: Page, kategori: str) -> str:
-    """Returns 'FORM_TABUNG' | 'TOLAK' | 'NIB' | 'ERROR'."""
+    """Returns 'FORM_TABUNG' | 'TOLAK' | 'ERROR'."""
     print(f"  [STEP 3] Modal pelanggan (target: {kategori})...")
     form_tabung, modal = False, False
     for _ in range(14):
+        # Reminder NIB (UM) sering muncul di sini → lewati, jangan dianggap tolak
+        await lewati_nib_reminder(page)
         if await page.locator(SEL["input_jumlah_tabung"]).count() > 0:
             form_tabung = True
             break
@@ -468,11 +497,6 @@ async def handle_modal_pelanggan(page: Page, kategori: str) -> str:
         except Exception:
             pass
         await asyncio.sleep(0.5)
-
-    if await cek_nib(page):
-        print("  [STEP 3] ⚠️  NIB belum terdaftar")
-        await tutup_modal(page)
-        return "NIB"
 
     ada_tolak, alasan = await cek_tolak(page)
     if ada_tolak:
@@ -510,10 +534,13 @@ async def handle_modal_pelanggan(page: Page, kategori: str) -> str:
         print("  [STEP 3] ✅ Jalur B via modal — tanpa radio")
         await klik_pertama(page, SEL["tombol_lanjutkan_transaksi"], "Lanjut (Jalur B)")
 
-    try:
-        await page.wait_for_selector(SEL["input_jumlah_tabung"], timeout=7_000)
-    except PlaywrightTimeoutError:
-        pass
+    # Setelah LANJUTKAN, khusus UM sering muncul reminder NIB → lewati dulu,
+    # sambil menunggu form tabung muncul (maks ~8 detik).
+    for _ in range(16):
+        if await page.locator(SEL["input_jumlah_tabung"]).count() > 0:
+            break
+        await lewati_nib_reminder(page)
+        await asyncio.sleep(0.5)
 
     ada_tolak, alasan = await cek_tolak(page)
     if ada_tolak:
