@@ -32,6 +32,13 @@ for /d %%D in ("%MSPW%\ffmpeg-*")   do xcopy /E /I /Y "%%D" "%DEST%\%%~nxD" >nul
 for /d %%D in ("%MSPW%\winldd-*")   do xcopy /E /I /Y "%%D" "%DEST%\%%~nxD" >nul
 
 echo.
+echo [2b/3] Menyalin DLL expat (dependensi openpyxl, sering terlewat)...
+set "CBIN=%CONDA_PREFIX%\Library\bin"
+if not exist "%CBIN%\libexpat.dll" set "CBIN=D:\miniconda3\envs\automation\Library\bin"
+copy /Y "%CBIN%\libexpat.dll" "dist\MAP_Automation\_internal\" >nul 2>&1
+copy /Y "%CBIN%\expat.dll"    "dist\MAP_Automation\_internal\" >nul 2>&1
+
+echo.
 echo [3/3] SELESAI!
 echo Hasil: dist\MAP_Automation\MAP_Automation.exe
 echo.
