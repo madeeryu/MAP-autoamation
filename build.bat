@@ -12,6 +12,9 @@ echo.
 echo [1/3] Build exe dengan PyInstaller...
 "%PY%" -m PyInstaller --noconfirm --clean ^
   --name MAP_Automation ^
+  --windowed ^
+  --icon=icon.ico ^
+  --add-data "icon.ico;." ^
   --collect-all playwright ^
   --collect-all cv2 ^
   --collect-submodules PyQt6 ^

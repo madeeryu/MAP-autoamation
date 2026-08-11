@@ -208,11 +208,17 @@ def main():
             sys.exit(1)
 
     from PyQt6.QtWidgets import QApplication
-    from PyQt6.QtGui import QFont, QPalette, QColor
+    from PyQt6.QtGui import QFont, QPalette, QColor, QIcon
 
     app = QApplication(sys.argv)
     app.setApplicationName("MAP Automation")
     app.setApplicationVersion("1.0.0")
+
+    # Ikon aplikasi (frozen: dari _MEIPASS, dev: dari folder script)
+    _icon_base = Path(getattr(sys, "_MEIPASS", Path(__file__).parent))
+    _icon_path = _icon_base / "icon.ico"
+    if _icon_path.exists():
+        app.setWindowIcon(QIcon(str(_icon_path)))
 
     # Paksa tema TERANG (abaikan dark mode Windows) agar background tidak hitam
     app.setStyle("Fusion")
