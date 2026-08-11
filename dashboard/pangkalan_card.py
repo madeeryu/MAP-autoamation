@@ -28,6 +28,8 @@ CARD_WIDTH = 320
 class PangkalanCard(QFrame):
     mulai_diminta = pyqtSignal(str, int, int, int)
     stop_diminta  = pyqtSignal(str)
+    edit_diminta  = pyqtSignal(str)
+    hapus_diminta = pyqtSignal(str)
 
     def __init__(self, pangkalan: dict, parent=None):
         super().__init__(parent)
@@ -57,6 +59,10 @@ class PangkalanCard(QFrame):
             }}
             QLabel#avatar {{ background: white; border-radius: 26px;
                 color: {T.GREEN_DARK}; font-size: 20px; font-weight: bold; }}
+            QPushButton#btn_hdr {{ background: rgba(255,255,255,0.20); color: white;
+                border: none; border-radius: 6px; font-size: 12px; }}
+            QPushButton#btn_hdr:hover {{ background: rgba(255,255,255,0.38); }}
+            QPushButton#btn_hdr:disabled {{ background: rgba(255,255,255,0.08); }}
             QLabel#nama {{ color: white; font-size: 15px; font-weight: bold; }}
             QLabel#statmini {{ color: {T.TEXT_DARK}; font-size: 13px; font-weight: bold; }}
             QLabel#statlbl {{ color: {T.MUTED}; font-size: 10px; }}
@@ -93,6 +99,19 @@ class PangkalanCard(QFrame):
         self.avatar.setAlignment(Qt.AlignmentFlag.AlignCenter)
         top.addWidget(self.avatar)
         top.addStretch()
+
+        pid = self.pangkalan["id"]
+        self.btn_edit = QPushButton("✏️"); self.btn_edit.setObjectName("btn_hdr")
+        self.btn_edit.setFixedSize(26, 26); self.btn_edit.setToolTip("Edit pangkalan (nama/HP/password)")
+        self.btn_edit.clicked.connect(lambda: self.edit_diminta.emit(pid))
+        top.addWidget(self.btn_edit, alignment=Qt.AlignmentFlag.AlignTop)
+
+        self.btn_hapus = QPushButton("🗑️"); self.btn_hapus.setObjectName("btn_hdr")
+        self.btn_hapus.setFixedSize(26, 26); self.btn_hapus.setToolTip("Hapus pangkalan")
+        self.btn_hapus.clicked.connect(lambda: self.hapus_diminta.emit(pid))
+        top.addWidget(self.btn_hapus, alignment=Qt.AlignmentFlag.AlignTop)
+
+        top.addSpacing(6)
         self.lbl_status = QLabel(); top.addWidget(self.lbl_status,
                                                   alignment=Qt.AlignmentFlag.AlignTop)
         h.addLayout(top)
@@ -207,6 +226,8 @@ class PangkalanCard(QFrame):
         self.spin_stok.setEnabled(not berjalan)
         self.btn_simpan_awal.setEnabled(not berjalan)
         self.btn_unlock_awal.setEnabled(not berjalan)
+        self.btn_edit.setEnabled(not berjalan)
+        self.btn_hapus.setEnabled(not berjalan)
 
     def set_stok_map(self, stok: int):
         self.stat_map["val"].setText(str(stok) if stok >= 0 else "—")

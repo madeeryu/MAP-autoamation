@@ -26,8 +26,8 @@ from PyQt6.QtCore import QObject, pyqtSignal, Qt, QTimer
 from dashboard import theme as T
 
 from core.config_manager import (
-    get_semua_pangkalan, tambah_pangkalan, hapus_pangkalan,
-    tambah_sesi, get_history_bulan_ini,
+    get_semua_pangkalan, tambah_pangkalan, hapus_pangkalan, update_pangkalan,
+    get_pangkalan_by_id, tambah_sesi, get_history_bulan_ini,
 )
 from core.session_pool import SessionPool, reset_session_lock
 from core.komposisi_helper import hitung_komposisi_sesi
@@ -149,6 +149,8 @@ class MainWindow(QMainWindow):
             card = PangkalanCard(p)
             card.mulai_diminta.connect(self._mulai_satu)
             card.stop_diminta.connect(self._stop_satu)
+            card.edit_diminta.connect(self._edit_pangkalan)
+            card.hapus_diminta.connect(self._hapus_pangkalan)
             self._cards[p["id"]] = card
             self._row.addWidget(card, alignment=Qt.AlignmentFlag.AlignTop)
         self._row.addStretch()
@@ -173,6 +175,43 @@ class MainWindow(QMainWindow):
             tambah_pangkalan(d["nama"], d["telepon"], d["password"], d["excel_path"])
             self._muat_kartu()
             self.status_bar.showMessage(f"Pangkalan '{d['nama']}' ditambahkan.")
+
+    def _edit_pangkalan(self, pangkalan_id: str):
+        if pangkalan_id in self._runners:
+            QMessageBox.information(self, "Sedang berjalan",
+                                    "Hentikan sesi pangkalan ini dulu sebelum mengedit.")
+            return
+        p = get_pangkalan_by_id(pangkalan_id)
+        if not p:
+            return
+        dlg = DialogPangkalan(self, pangkalan=p)
+        if dlg.exec():
+            d = dlg.get_data()
+            update_pangkalan(pangkalan_id, nama=d["nama"], telepon=d["telepon"],
+                             password=d["password"], excel_path=d["excel_path"])
+            self._muat_kartu()
+            self.status_bar.showMessage(f"Pangkalan '{d['nama']}' diperbarui.")
+
+    def _hapus_pangkalan(self, pangkalan_id: str):
+        if pangkalan_id in self._runners:
+            QMessageBox.information(self, "Sedang berjalan",
+                                    "Hentikan sesi pangkalan ini dulu sebelum menghapus.")
+            return
+        p = get_pangkalan_by_id(pangkalan_id)
+        if not p:
+            return
+        jawab = QMessageBox.question(
+            self, "Hapus Pangkalan",
+            f"Yakin hapus pangkalan '{p.get('nama')}'?\n\n"
+            f"Data pangkalan (nama/HP/password) & history bulanannya akan dihapus.\n"
+            f"Data NIK di Excel dan cooldown TIDAK terpengaruh.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No)
+        if jawab != QMessageBox.StandardButton.Yes:
+            return
+        hapus_pangkalan(pangkalan_id)
+        self._muat_kartu()
+        self.status_bar.showMessage(f"Pangkalan '{p.get('nama')}' dihapus.")
 
     # ── build & jalankan runner ──
     def _buat_runner(self, card: PangkalanCard, antrian: list, sesi_id: str, pool) -> PangkalanRunner:
