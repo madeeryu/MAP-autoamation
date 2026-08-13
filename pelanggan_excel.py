@@ -116,6 +116,54 @@ class PelangganManager:
         self._simpan_log()
 
 
+# ─────────────────────────────────────────────
+# TAMBAH PELANGGAN KE EXCEL
+# ─────────────────────────────────────────────
+
+def tambah_pelanggan_ke_excel(excel_path: str, nik: str, nama: str,
+                              keterangan: str = "RT") -> None:
+    """
+    Tambahkan 1 pelanggan (baris baru) ke file Excel.
+
+    Kolom: No. | Nama | NIK KTP | Keterangan  (sheet "Sheet1").
+    Validasi: NIK 16 digit angka & belum ada. Raise ValueError jika gagal.
+    """
+    from openpyxl import load_workbook, Workbook
+
+    nik = str(nik).strip()
+    if len(nik) != 16 or not nik.isdigit():
+        raise ValueError("NIK harus tepat 16 digit angka.")
+    nama = (nama or "").strip()
+    if not nama:
+        raise ValueError("Nama tidak boleh kosong.")
+    keterangan = (keterangan or "RT").strip().upper()
+    if keterangan not in ("RT", "UM", "RT/UM"):
+        keterangan = "RT"
+
+    p = Path(excel_path)
+    if p.exists():
+        wb = load_workbook(excel_path)
+        ws = wb["Sheet1"] if "Sheet1" in wb.sheetnames else wb.active
+    else:
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Sheet1"
+        ws.append(["No.", "Nama", "NIK KTP", "Keterangan"])
+
+    max_no = 0
+    for row in ws.iter_rows(min_row=2, values_only=True):
+        if not row or len(row) < 3:
+            continue
+        if row[2] is not None and str(row[2]).strip() == nik:
+            raise ValueError(f"NIK {nik} sudah terdaftar di Excel.")
+        if row[0] is not None and str(row[0]).strip().isdigit():
+            max_no = max(max_no, int(row[0]))
+
+    ws.append([max_no + 1, nama, nik, keterangan])
+    wb.save(excel_path)
+    print(f"[Excel] Pelanggan ditambah: {nama} ({nik}) {keterangan} → {excel_path}")
+
+
 if __name__ == "__main__":
     try:
         mgr = PelangganManager()
