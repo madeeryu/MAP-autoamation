@@ -30,6 +30,7 @@ dari file v5 Anda; selector stok = dari file E: yang sempat terbaca.
 
 import asyncio
 import random
+from datetime import date as _date
 
 from playwright.async_api import Page, TimeoutError as PlaywrightTimeoutError
 
@@ -37,6 +38,60 @@ from captcha_solver import solve_captcha
 
 
 MAP_URL = "https://subsiditepatlpg.mypertamina.id/merchant-login"
+
+# ── Kelengkapan data pelanggan (kebijakan baru MAP) ──
+TEMPAT_LAHIR_DEFAULT = "Cirebon"
+_BULAN_ID = ["", "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+             "Juli", "Agustus", "September", "Oktober", "November", "Desember"]
+
+
+def tanggal_lahir_dari_nik(nik: str):
+    """
+    Urai tanggal lahir dari NIK: digit 7-12 = DDMMYY.
+    Perempuan → DD ditambah 40 (dikurangi lagi di sini).
+    Abad: pakai 20xx bila hasilnya bikin usia >= 17, selain itu 19xx.
+    Return (hari, bulan, tahun) atau None jika tak valid.
+    """
+    try:
+        nik = str(nik).strip()
+        dd = int(nik[6:8]); mm = int(nik[8:10]); yy = int(nik[10:12])
+        hari = dd - 40 if dd > 40 else dd
+        thn_ini = _date.today().year
+        tahun = 2000 + yy if (2000 + yy) <= (thn_ini - 17) else 1900 + yy
+        if not (1 <= hari <= 31 and 1 <= mm <= 12):
+            return None
+        return hari, mm, tahun
+    except Exception:
+        return None
+
+
+async def _pilih_dropdown(page, placeholder: str, target: str) -> bool:
+    """Klik Mantine Select (by placeholder Tgl/Bln/Thn) lalu pilih opsi == target."""
+    inp = page.locator(f"input[placeholder='{placeholder}']").first
+    if await inp.count() == 0:
+        return False
+    try:
+        await inp.click()
+        await asyncio.sleep(0.4)
+        opts = page.locator("[role='option']")
+        for i in range(await opts.count()):
+            o = opts.nth(i)
+            t = (await o.inner_text() or "").strip()
+            if t == target or t.lstrip("0") == target.lstrip("0"):
+                await o.click()
+                await asyncio.sleep(0.2)
+                return True
+        # fallback: ketik lalu pilih opsi pertama
+        await inp.fill(target)
+        await asyncio.sleep(0.4)
+        opts = page.locator("[role='option']")
+        if await opts.count() > 0:
+            await opts.first.click()
+            await asyncio.sleep(0.2)
+            return True
+    except Exception as e:
+        print(f"  [UPDATE] dropdown '{placeholder}' error: {e}")
+    return False
 
 # ─────────────────────────────────────────────
 # SELECTOR
@@ -479,75 +534,128 @@ async def lewati_nib_reminder(page: Page) -> bool:
     return False
 
 
-async def handle_modal_pelanggan(page: Page, kategori: str) -> str:
-    """Returns 'FORM_TABUNG' | 'TOLAK' | 'ERROR'."""
+async def handle_modal_pelanggan(page: Page, kategori: str, nik: str = "") -> str:
+    """
+    Tangani modal setelah input NIK, sebagai STATE-MACHINE (urutan bisa beragam):
+      - Pilih kategori RT/UM (Pelanggan Terdaftar)
+      - Pernyataan Persetujuan (centang → SELANJUTNYA)
+      - Reminder NIB (NANTI SAJA, LANJUT TRANSAKSI)
+      - "Data Pelanggan belum lengkap" → UPDATE DATA PELANGGAN
+      - Form update: Tempat Lahir + Tgl/Bln/Thn (dari NIK) → SELANJUTNYA
+      - Konfirmasi "Pastikan data benar" → YA, Perbarui
+    Selesai saat form tabung muncul.
+
+    Returns 'FORM_TABUNG' | 'TOLAK' | 'ERROR'.
+    """
     print(f"  [STEP 3] Modal pelanggan (target: {kategori})...")
-    form_tabung, modal = False, False
-    for _ in range(14):
-        # Reminder NIB (UM) sering muncul di sini → lewati, jangan dianggap tolak
-        await lewati_nib_reminder(page)
+
+    tgl = tanggal_lahir_dari_nik(nik) if nik else None
+    if tgl:
+        print(f"  [UPDATE] Tgl lahir dari NIK: {tgl[0]} {_BULAN_ID[tgl[1]]} {tgl[2]}")
+
+    kategori_dipilih = False
+
+    for _ in range(45):  # ~ cukup untuk banyak langkah
+        # 0) Form tabung → SELESAI
         if await page.locator(SEL["input_jumlah_tabung"]).count() > 0:
-            form_tabung = True
-            break
-        try:
-            el = page.locator("text=Pelanggan Terdaftar").first
-            if await el.count() > 0 and await el.is_visible():
-                modal = True
-                break
-        except Exception:
-            pass
+            print("  [STEP 3] ✅ Form tabung siap")
+            return "FORM_TABUNG"
+
+        # 1) Penolakan
+        ada_tolak, alasan = await cek_tolak(page)
+        if ada_tolak:
+            print(f"  [STEP 3] ⚠️  TOLAK: '{alasan}'")
+            await tutup_modal(page)
+            return "TOLAK"
+
+        # 2) Reminder NIB (UM) → NANTI SAJA, LANJUT TRANSAKSI
+        if await lewati_nib_reminder(page):
+            continue
+
+        # 3) Pernyataan Persetujuan → centang semua checkbox → SELANJUTNYA
+        if await page.locator("text=Pernyataan Persetujuan").count() > 0:
+            cb = page.locator("input[type='checkbox']")
+            for i in range(await cb.count()):
+                try:
+                    if not await cb.nth(i).is_checked():
+                        await cb.nth(i).check()
+                except Exception:
+                    pass
+            print("  [UPDATE] Persetujuan dicentang → SELANJUTNYA")
+            await klik_pertama(page, ["button:has-text('SELANJUTNYA')"], "Persetujuan")
+            await asyncio.sleep(1.0)
+            continue
+
+        # 4) "Data Pelanggan belum lengkap" → UPDATE DATA PELANGGAN
+        if await page.locator("text=Data Pelanggan belum lengkap").count() > 0:
+            print("  [UPDATE] Data belum lengkap → UPDATE DATA PELANGGAN")
+            await klik_pertama(page, ["button:has-text('UPDATE DATA PELANGGAN')"], "UPDATE DATA")
+            await asyncio.sleep(1.0)
+            continue
+
+        # 5) Form update: Tempat Lahir + Tgl/Bln/Thn → SELANJUTNYA
+        tl = page.locator(
+            "input[placeholder*='tempat lahir'], input[placeholder*='Tempat Lahir']").first
+        if await tl.count() > 0 and await tl.is_visible():
+            print(f"  [UPDATE] Isi form: Tempat={TEMPAT_LAHIR_DEFAULT}, Tgl={tgl}")
+            try:
+                await tl.click()
+                await tl.fill(TEMPAT_LAHIR_DEFAULT)
+            except Exception:
+                pass
+            if tgl:
+                await _pilih_dropdown(page, "Tgl", str(tgl[0]))
+                await _pilih_dropdown(page, "Bln", _BULAN_ID[tgl[1]])
+                await _pilih_dropdown(page, "Thn", str(tgl[2]))
+            await asyncio.sleep(0.3)
+            await klik_pertama(page, ["button[data-testid='btnSubmitUpdate']",
+                                      "button:has-text('SELANJUTNYA')"], "Submit update")
+            await asyncio.sleep(1.2)
+            continue
+
+        # 6) Konfirmasi "Pastikan data benar" → YA, Perbarui
+        if await page.locator("text=Pastikan semua data").count() > 0:
+            print("  [UPDATE] Konfirmasi → YA, Perbarui DATA PELANGGAN")
+            await klik_pertama(page, ["button:has-text('YA, Perbarui')",
+                                      "button:has-text('Perbarui DATA')"], "YA Perbarui")
+            await asyncio.sleep(1.5)
+            continue
+
+        # 7) Pilih kategori RT/UM (jika ada radio) → LANJUTKAN TRANSAKSI
+        ada_radio = (
+            await page.locator(SEL["radio_rt"]).count() > 0 or
+            await page.locator(SEL["radio_um"]).count() > 0 or
+            await page.locator(SEL["label_rt"]).count() > 0
+        )
+        if ada_radio and not kategori_dipilih:
+            print("  [STEP 3] ✅ Jalur A — pilih kategori")
+            if kategori.upper() in ("RT", "RUMAH TANGGA"):
+                await klik_pertama(page, [SEL["label_rt"], SEL["radio_rt"]], "RT dipilih")
+            else:
+                await klik_pertama(page, [SEL["label_um"], SEL["radio_um"]], "UM dipilih")
+            await asyncio.sleep(0.3)
+            await klik_pertama(page, SEL["tombol_lanjutkan_transaksi"], "LANJUTKAN TRANSAKSI")
+            kategori_dipilih = True
+            await asyncio.sleep(1.0)
+            continue
+
+        # 8) Modal "Pelanggan Terdaftar" tanpa radio (Jalur B) → LANJUTKAN
+        if (not kategori_dipilih and
+                await page.locator("text=Pelanggan Terdaftar").count() > 0):
+            print("  [STEP 3] ✅ Jalur B — tanpa radio")
+            await klik_pertama(
+                page,
+                SEL["tombol_lanjutkan_transaksi"] + ["button:has-text('LANJUTKAN PENJUALAN')"],
+                "Lanjut (Jalur B)")
+            kategori_dipilih = True
+            await asyncio.sleep(1.0)
+            continue
+
         await asyncio.sleep(0.5)
 
-    ada_tolak, alasan = await cek_tolak(page)
-    if ada_tolak:
-        print(f"  [STEP 3] ⚠️  TOLAK: '{alasan}'")
-        await tutup_modal(page)
-        return "TOLAK"
-
-    if form_tabung:
-        print("  [STEP 3] ✅ Jalur B — form tabung langsung")
-        return "FORM_TABUNG"
-
-    if not modal:
-        print("  [STEP 3] ❌ Tidak ada modal/form dalam 7 detik")
-        await page.screenshot(path="debug_step3.png")
-        return "ERROR"
-
-    ada_radio = (
-        await page.locator(SEL["radio_rt"]).count() > 0 or
-        await page.locator(SEL["radio_um"]).count() > 0 or
-        await page.locator(SEL["label_rt"]).count() > 0
-    )
-
-    if ada_radio:
-        print("  [STEP 3] ✅ Jalur A — pilihan RT/UM")
-        if kategori.upper() in ("RT", "RUMAH TANGGA"):
-            await klik_pertama(page, [SEL["label_rt"], SEL["radio_rt"]], "RT dipilih")
-        else:
-            await klik_pertama(page, [SEL["label_um"], SEL["radio_um"]], "UM dipilih")
-        await asyncio.sleep(0.3)
-        if not await klik_pertama(page, SEL["tombol_lanjutkan_transaksi"], "LANJUTKAN TRANSAKSI"):
-            print("  [STEP 3] ❌ Tombol LANJUTKAN tidak ditemukan")
-            await page.screenshot(path="debug_lanjut.png")
-            return "ERROR"
-    else:
-        print("  [STEP 3] ✅ Jalur B via modal — tanpa radio")
-        await klik_pertama(page, SEL["tombol_lanjutkan_transaksi"], "Lanjut (Jalur B)")
-
-    # Setelah LANJUTKAN, khusus UM sering muncul reminder NIB → lewati dulu,
-    # sambil menunggu form tabung muncul (maks ~8 detik).
-    for _ in range(16):
-        if await page.locator(SEL["input_jumlah_tabung"]).count() > 0:
-            break
-        await lewati_nib_reminder(page)
-        await asyncio.sleep(0.5)
-
-    ada_tolak, alasan = await cek_tolak(page)
-    if ada_tolak:
-        print(f"  [STEP 3] ⚠️  TOLAK setelah lanjut: '{alasan}'")
-        await tutup_modal(page)
-        return "TOLAK"
-    return "FORM_TABUNG"
+    print("  [STEP 3] ❌ Timeout menangani modal pelanggan")
+    await page.screenshot(path="debug_step3.png")
+    return "ERROR"
 
 
 async def set_tabung_dan_cek_pesanan(page: Page, kategori: str, jumlah_tabung: int) -> bool:
@@ -660,7 +768,7 @@ async def jalankan_transaksi_tunggal(
         if hasil_nik == "ERROR":
             return "GAGAL"
 
-        hasil_modal = await handle_modal_pelanggan(page, kategori)
+        hasil_modal = await handle_modal_pelanggan(page, kategori, nik)
         if hasil_modal in ("TOLAK", "NIB"):
             return hasil_modal
         if hasil_modal == "ERROR":
