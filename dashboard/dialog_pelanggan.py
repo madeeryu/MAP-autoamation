@@ -22,6 +22,7 @@ from dashboard import theme as T
 WARNA_STATUS = {
     "Siap":            "#2e7d32",
     "Batas tercapai":  "#c62828",
+    "Mati":            "#616161",
 }
 
 
@@ -65,7 +66,8 @@ class DialogPelanggan(QDialog):
         self.cari.textChanged.connect(self._terapkan_filter)
         row.addWidget(self.cari, 1)
         self.filter_status = QComboBox()
-        self.filter_status.addItems(["Semua", "Siap", "Cooldown", "Batas tercapai"])
+        self.filter_status.addItems(["Semua", "Siap", "Cooldown", "Batas tercapai",
+                                     "Mati", "⚠️ Selisih tgl (Excel≠NIK)"])
         self.filter_status.currentTextChanged.connect(self._terapkan_filter)
         row.addWidget(self.filter_status)
         btn_refresh = QPushButton("🔄"); btn_refresh.setFixedWidth(44)
@@ -77,17 +79,16 @@ class DialogPelanggan(QDialog):
         root.addLayout(row)
 
         # Tabel
-        self.tabel = QTableWidget(0, 5)
-        self.tabel.setHorizontalHeaderLabels(["Nama", "NIK", "Terpakai", "Sisa", "Status"])
+        self._kolom = ["Nama", "NIK", "Tempat", "Tgl (Excel)", "Tgl (NIK)", "Cek", "Status"]
+        self.tabel = QTableWidget(0, len(self._kolom))
+        self.tabel.setHorizontalHeaderLabels(self._kolom)
         self.tabel.verticalHeader().setVisible(False)
         self.tabel.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.tabel.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         hh = self.tabel.horizontalHeader()
         hh.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        hh.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        hh.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        hh.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
-        hh.setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)
+        for c in range(1, len(self._kolom)):
+            hh.setSectionResizeMode(c, QHeaderView.ResizeMode.ResizeToContents)
         root.addWidget(self.tabel)
 
         row_close = QHBoxLayout(); row_close.addStretch()
@@ -101,15 +102,18 @@ class DialogPelanggan(QDialog):
         except Exception as e:
             self.lbl_ringkas.setText(f"Gagal baca data: {e}")
             self._data = []
-        siap = sum(1 for x in self._data if x["status"] == "Siap")
-        cd   = sum(1 for x in self._data if x["status"].startswith("Cooldown"))
-        bts  = sum(1 for x in self._data if x["status"] == "Batas tercapai")
+        siap  = sum(1 for x in self._data if x["status"] == "Siap")
+        cd    = sum(1 for x in self._data if x["status"].startswith("Cooldown"))
+        bts   = sum(1 for x in self._data if x["status"] == "Batas tercapai")
+        mati  = sum(1 for x in self._data if x.get("mati"))
+        beda  = sum(1 for x in self._data if x.get("cocok") is False)
         self.lbl_ringkas.setText(
-            f"Total {len(self._data)} NIK — 🟢 Siap {siap}  🔒 Cooldown {cd}  🚫 Batas {bts}")
+            f"Total {len(self._data)} — 🟢 Siap {siap}  🔒 Cooldown {cd}  "
+            f"🚫 Batas {bts}  ⚰️ Mati {mati}  ⚠️ Selisih tgl {beda}")
         self._terapkan_filter()
 
     def _terapkan_filter(self):
-        q = self.cari.text().strip().lower()
+        q  = self.cari.text().strip().lower()
         fs = self.filter_status.currentText()
         rows = []
         for x in self._data:
@@ -121,6 +125,10 @@ class DialogPelanggan(QDialog):
                 continue
             if fs == "Batas tercapai" and x["status"] != "Batas tercapai":
                 continue
+            if fs == "Mati" and not x.get("mati"):
+                continue
+            if fs.startswith("⚠️") and x.get("cocok") is not False:
+                continue
             rows.append(x)
 
         self.tabel.setRowCount(0)
@@ -128,16 +136,25 @@ class DialogPelanggan(QDialog):
             r = self.tabel.rowCount(); self.tabel.insertRow(r)
             self.tabel.setItem(r, 0, QTableWidgetItem(x["nama"]))
             self.tabel.setItem(r, 1, QTableWidgetItem(x["nik"]))
-            it_t = QTableWidgetItem(str(x["terpakai"]))
-            it_t.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.tabel.setItem(r, 2, it_t)
-            sisa = "∞" if x["sisa"] is None else str(x["sisa"])
-            it_s = QTableWidgetItem(sisa); it_s.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-            self.tabel.setItem(r, 3, it_s)
+            self.tabel.setItem(r, 2, QTableWidgetItem(x.get("tempat", "")))
+            self.tabel.setItem(r, 3, QTableWidgetItem(x.get("tgl_excel", "-")))
+            self.tabel.setItem(r, 4, QTableWidgetItem(x.get("tgl_nik", "-")))
+            # Kolom Cek: ✓ cocok, ✗ beda, – belum ada data Excel
+            cocok = x.get("cocok")
+            if cocok is True:
+                cek, ck = "✓", "#2e7d32"
+            elif cocok is False:
+                cek, ck = "✗ beda", "#c62828"
+            else:
+                cek, ck = "–", T.MUTED
+            it_c = QTableWidgetItem(cek); it_c.setForeground(QColor(ck))
+            it_c.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.tabel.setItem(r, 5, it_c)
             it_st = QTableWidgetItem(x["status"])
-            warna = WARNA_STATUS.get(x["status"], "#ef6c00" if x["status"].startswith("Cooldown") else T.TEXT)
+            warna = WARNA_STATUS.get(
+                x["status"], "#ef6c00" if x["status"].startswith("Cooldown") else T.TEXT)
             it_st.setForeground(QColor(warna))
-            self.tabel.setItem(r, 4, it_st)
+            self.tabel.setItem(r, 6, it_st)
 
     def _tambah_pelanggan(self):
         dlg = DialogTambahPelanggan(self)

@@ -181,7 +181,11 @@ class PangkalanRunner:
                 self._log(f"📋 [{idx+1}/{len(self.antrian)}] {item.get('nama','')[:20]} "
                           f"| {kategori} | {nik[:8]}***")
 
-                hasil = await jalankan_transaksi_tunggal(page, nik, kategori, jumlah)
+                hasil = await jalankan_transaksi_tunggal(
+                    page, nik, kategori, jumlah,
+                    tempat_lahir=item.get("tempat_lahir", ""),
+                    tgl_lahir=item.get("tgl_lahir"),
+                )
 
                 # ── STOK MAP habis: hentikan seluruh sesi ──
                 if hasil == "STOK_HABIS":

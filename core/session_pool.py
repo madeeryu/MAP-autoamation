@@ -170,7 +170,11 @@ class SessionPool:
                 p for p in self._semua
                 if p["nik"] not in sudah_terkunci
                 and p["nik"] not in nik_cooldown
+                and not p.get("mati", False)          # lewati pelanggan "Mati"
             ]
+            n_mati = sum(1 for p in self._semua if p.get("mati", False))
+            if n_mati:
+                print(f"[Pool] {n_mati} pelanggan 'Mati' dilewati")
 
             # Filter 3: batas tabung per pelanggan / bulan (0 = tanpa batas)
             try:
@@ -241,6 +245,8 @@ class SessionPool:
                         "keterangan_asli":  p["keterangan"],
                         "kategori_dipakai": "RT",
                         "jumlah_tabung":    1,
+                        "tempat_lahir":     p.get("tempat_lahir", ""),
+                        "tgl_lahir":        p.get("tgl_lahir"),
                     })
                     rt_diambil += 1
                 else:
@@ -264,6 +270,8 @@ class SessionPool:
                         "keterangan_asli":  p["keterangan"],
                         "kategori_dipakai": "UM",
                         "jumlah_tabung":    1,
+                        "tempat_lahir":     p.get("tempat_lahir", ""),
+                        "tgl_lahir":        p.get("tgl_lahir"),
                     })
                     um_diambil += 1
                 else:

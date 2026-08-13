@@ -49,38 +49,80 @@ class PelangganManager:
 
         print(f"  [Excel] Membaca data dari: {self.excel_path}")
         wb = load_workbook(self.excel_path, read_only=True)
-        # Pakai sheet yang diminta, fallback ke sheet aktif
         ws = wb[self.sheet_name] if self.sheet_name in wb.sheetnames else wb.active
 
+        rows = list(ws.iter_rows(values_only=True))
+        wb.close()
         self.semua_pelanggan = []
-        for row in ws.iter_rows(min_row=2, values_only=True):
-            # Kolom: No. | Nama | NIK KTP | Keterangan | ...
-            if not row or len(row) < 3 or not row[2]:
+        if not rows:
+            print("  [Excel] Kosong"); return
+
+        # ── Petakan kolom BERDASARKAN HEADER (tahan walau urutan kolom beda) ──
+        header = [str(h).strip().lower() if h is not None else "" for h in rows[0]]
+
+        def cari(*keys, default=None):
+            for i, h in enumerate(header):
+                if any(k in h for k in keys):
+                    return i
+            return default
+
+        i_nama = cari("nama", default=1)
+        i_nik  = cari("nik",  default=2)
+        i_ket  = cari("keterangan", default=3)
+        i_tmp  = cari("tempat")
+        i_tgl  = cari("tanggal", "lahir")
+
+        try:
+            from core.nik_util import parse_tanggal_lahir
+        except Exception:
+            parse_tanggal_lahir = None
+
+        def ambil(row, idx):
+            return row[idx] if (idx is not None and idx < len(row)) else None
+
+        mati_count = 0
+        for row in rows[1:]:
+            if not row:
                 continue
-
-            nik        = str(row[2]).strip()
-            nama       = str(row[1]).strip().rstrip("/") if row[1] else ""
-            keterangan = str(row[3]).strip().upper() if len(row) > 3 and row[3] else "RT"
-
+            nik_raw = ambil(row, i_nik)
+            if not nik_raw:
+                continue
+            nik = str(nik_raw).strip()
             if len(nik) != 16 or not nik.isdigit():
                 continue
 
-            if keterangan not in ("RT", "UM", "RT/UM"):
-                keterangan = "RT"
+            nama = ambil(row, i_nama)
+            nama = str(nama).strip().rstrip("/") if nama else ""
+            ket  = ambil(row, i_ket)
+            ket  = str(ket).strip().upper() if ket else "RT"
+            if ket not in ("RT", "UM", "RT/UM"):
+                ket = "RT"
+
+            tempat = ambil(row, i_tmp)
+            tempat = str(tempat).strip() if tempat is not None else ""
+            tgl_raw = ambil(row, i_tgl)
+            if parse_tanggal_lahir:
+                tgl, mati = parse_tanggal_lahir(tgl_raw, tempat)
+            else:
+                tgl, mati = None, ("mati" in tempat.lower())
+            if mati:
+                mati_count += 1
 
             self.semua_pelanggan.append({
-                "nik":        nik,
-                "nama":       nama,
-                "keterangan": keterangan,
+                "nik":          nik,
+                "nama":         nama,
+                "keterangan":   ket,
+                "tempat_lahir": "" if mati else tempat,
+                "tgl_lahir":    tgl,     # (d,m,y) atau None
+                "mati":         mati,
             })
 
-        wb.close()
-        print(f"  [Excel] {len(self.semua_pelanggan)} pelanggan berhasil dimuat")
-
+        print(f"  [Excel] {len(self.semua_pelanggan)} pelanggan dimuat "
+              f"(Tempat: kol {i_tmp}, Tgl: kol {i_tgl}, Mati: {mati_count})")
         rt    = sum(1 for p in self.semua_pelanggan if p["keterangan"] == "RT")
         um    = sum(1 for p in self.semua_pelanggan if p["keterangan"] == "UM")
         rt_um = sum(1 for p in self.semua_pelanggan if p["keterangan"] == "RT/UM")
-        print(f"  [Excel] RT: {rt} | UM: {um} | RT/UM (fleksibel): {rt_um}")
+        print(f"  [Excel] RT: {rt} | UM: {um} | RT/UM: {rt_um}")
 
     def _load_log(self):
         hari_ini = date.today().isoformat()

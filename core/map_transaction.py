@@ -41,28 +41,7 @@ MAP_URL = "https://subsiditepatlpg.mypertamina.id/merchant-login"
 
 # ── Kelengkapan data pelanggan (kebijakan baru MAP) ──
 TEMPAT_LAHIR_DEFAULT = "Cirebon"
-_BULAN_ID = ["", "Januari", "Februari", "Maret", "April", "Mei", "Juni",
-             "Juli", "Agustus", "September", "Oktober", "November", "Desember"]
-
-
-def tanggal_lahir_dari_nik(nik: str):
-    """
-    Urai tanggal lahir dari NIK: digit 7-12 = DDMMYY.
-    Perempuan → DD ditambah 40 (dikurangi lagi di sini).
-    Abad: pakai 20xx bila hasilnya bikin usia >= 17, selain itu 19xx.
-    Return (hari, bulan, tahun) atau None jika tak valid.
-    """
-    try:
-        nik = str(nik).strip()
-        dd = int(nik[6:8]); mm = int(nik[8:10]); yy = int(nik[10:12])
-        hari = dd - 40 if dd > 40 else dd
-        thn_ini = _date.today().year
-        tahun = 2000 + yy if (2000 + yy) <= (thn_ini - 17) else 1900 + yy
-        if not (1 <= hari <= 31 and 1 <= mm <= 12):
-            return None
-        return hari, mm, tahun
-    except Exception:
-        return None
+from core.nik_util import tanggal_lahir_dari_nik, BULAN_ID as _BULAN_ID
 
 
 async def _pilih_dropdown(page, placeholder: str, target: str) -> bool:
@@ -534,7 +513,8 @@ async def lewati_nib_reminder(page: Page) -> bool:
     return False
 
 
-async def handle_modal_pelanggan(page: Page, kategori: str, nik: str = "") -> str:
+async def handle_modal_pelanggan(page: Page, kategori: str, nik: str = "",
+                                 tempat_lahir: str = "", tgl_lahir=None) -> str:
     """
     Tangani modal setelah input NIK, sebagai STATE-MACHINE (urutan bisa beragam):
       - Pilih kategori RT/UM (Pelanggan Terdaftar)
@@ -549,9 +529,14 @@ async def handle_modal_pelanggan(page: Page, kategori: str, nik: str = "") -> st
     """
     print(f"  [STEP 3] Modal pelanggan (target: {kategori})...")
 
-    tgl = tanggal_lahir_dari_nik(nik) if nik else None
+    # Sumber data update: UTAMAKAN Excel, fallback ke urai NIK / default.
+    tgl_nik = tanggal_lahir_dari_nik(nik) if nik else None
+    tgl = tgl_lahir or tgl_nik
+    tempat = (tempat_lahir or "").strip() or TEMPAT_LAHIR_DEFAULT
+    if tgl_lahir and tgl_nik and tgl_lahir != tgl_nik:
+        print(f"  [UPDATE] ⚠️  Beda tgl Excel {tgl_lahir} vs NIK {tgl_nik} — pakai Excel")
     if tgl:
-        print(f"  [UPDATE] Tgl lahir dari NIK: {tgl[0]} {_BULAN_ID[tgl[1]]} {tgl[2]}")
+        print(f"  [UPDATE] Data: Tempat={tempat}, Tgl={tgl[0]} {_BULAN_ID[tgl[1]]} {tgl[2]}")
 
     kategori_dipilih = False
 
@@ -597,10 +582,10 @@ async def handle_modal_pelanggan(page: Page, kategori: str, nik: str = "") -> st
         tl = page.locator(
             "input[placeholder*='tempat lahir'], input[placeholder*='Tempat Lahir']").first
         if await tl.count() > 0 and await tl.is_visible():
-            print(f"  [UPDATE] Isi form: Tempat={TEMPAT_LAHIR_DEFAULT}, Tgl={tgl}")
+            print(f"  [UPDATE] Isi form: Tempat={tempat}, Tgl={tgl}")
             try:
                 await tl.click()
-                await tl.fill(TEMPAT_LAHIR_DEFAULT)
+                await tl.fill(tempat)
             except Exception:
                 pass
             if tgl:
@@ -745,6 +730,8 @@ async def jalankan_transaksi_tunggal(
     nik: str,
     kategori: str = "RT",
     jumlah_tabung: int = 1,
+    tempat_lahir: str = "",
+    tgl_lahir=None,
 ) -> str:
     """
     Satu siklus transaksi lengkap dengan CAPTCHA OTOMATIS.
@@ -768,7 +755,8 @@ async def jalankan_transaksi_tunggal(
         if hasil_nik == "ERROR":
             return "GAGAL"
 
-        hasil_modal = await handle_modal_pelanggan(page, kategori, nik)
+        hasil_modal = await handle_modal_pelanggan(page, kategori, nik,
+                                                   tempat_lahir, tgl_lahir)
         if hasil_modal in ("TOLAK", "NIB"):
             return hasil_modal
         if hasil_modal == "ERROR":

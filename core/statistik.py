@@ -24,6 +24,8 @@ def detail_pelanggan(excel_path: str) -> list:
       status: "Siap" | "Cooldown s/d <tgl>" | "Batas tercapai"
       sisa  : batas - terpakai  (None jika tanpa batas)
     """
+    from core.nik_util import tanggal_lahir_dari_nik, fmt_tanggal
+
     semua = _baca_pelanggan(excel_path)
     cd    = get_nik_cooldown_aktif()
     pakai = get_pemakaian_bulan_ini()
@@ -34,16 +36,32 @@ def detail_pelanggan(excel_path: str) -> list:
         nik = p["nik"]
         t   = pakai.get(nik, 0)
         sisa = (batas - t) if batas > 0 else None
-        if nik in cd:
+        if p.get("mati"):
+            status = "Mati"
+        elif nik in cd:
             info = get_info_cooldown(nik)
             status = f"Cooldown s/d {info['aktif_lagi'] if info else '-'}"
         elif batas > 0 and t >= batas:
             status = "Batas tercapai"
         else:
             status = "Siap"
+
+        tgl_excel = p.get("tgl_lahir")
+        tgl_nik   = tanggal_lahir_dari_nik(nik)
+        # cocok: None jika salah satu kosong; True/False jika keduanya ada
+        if tgl_excel and tgl_nik:
+            cocok = (tgl_excel == tgl_nik)
+        else:
+            cocok = None
+
         out.append({
             "nik": nik, "nama": p["nama"], "keterangan": p["keterangan"],
             "terpakai": t, "sisa": sisa, "status": status,
+            "tempat": p.get("tempat_lahir", ""),
+            "tgl_excel": fmt_tanggal(tgl_excel) if tgl_excel else "-",
+            "tgl_nik":   fmt_tanggal(tgl_nik) if tgl_nik else "-",
+            "cocok":     cocok,   # True / False / None
+            "mati":      bool(p.get("mati")),
         })
     return out
 
