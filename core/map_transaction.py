@@ -576,6 +576,15 @@ async def handle_modal_pelanggan(page: Page, kategori: str, nik: str = "",
             await asyncio.sleep(1.0)
             continue
 
+        # 5a) Konfirmasi "Pastikan data benar" → YA, Perbarui
+        #     (DICEK SEBELUM form, karena form masih di DOM di belakang modal ini)
+        if await page.locator("text=Pastikan semua data").count() > 0:
+            print("  [UPDATE] Konfirmasi → YA, Perbarui DATA PELANGGAN")
+            await klik_pertama(page, ["button:has-text('YA, Perbarui')",
+                                      "button:has-text('Perbarui DATA')"], "YA Perbarui")
+            await asyncio.sleep(1.5)
+            continue
+
         # 5) Form update: Tempat Lahir + Tgl/Bln/Thn → SELANJUTNYA
         tl = page.locator(
             "input[placeholder*='tempat lahir'], input[placeholder*='Tempat Lahir']").first
@@ -594,14 +603,6 @@ async def handle_modal_pelanggan(page: Page, kategori: str, nik: str = "",
             await klik_pertama(page, ["button[data-testid='btnSubmitUpdate']",
                                       "button:has-text('SELANJUTNYA')"], "Submit update")
             await asyncio.sleep(1.2)
-            continue
-
-        # 6) Konfirmasi "Pastikan data benar" → YA, Perbarui
-        if await page.locator("text=Pastikan semua data").count() > 0:
-            print("  [UPDATE] Konfirmasi → YA, Perbarui DATA PELANGGAN")
-            await klik_pertama(page, ["button:has-text('YA, Perbarui')",
-                                      "button:has-text('Perbarui DATA')"], "YA Perbarui")
-            await asyncio.sleep(1.5)
             continue
 
         # 6b) Reminder NIB (UM) → NANTI SAJA, LANJUT TRANSAKSI (dicek SETELAH
