@@ -496,10 +496,12 @@ async def lewati_nib_reminder(page: Page) -> bool:
     (berbasis TEKS, bukan class, karena class-nya sama dengan tombol lain) agar
     transaksi tetap lanjut. Return True jika modal dilewati.
     """
+    # PENTING: hanya cocokkan yang mengandung "LANJUT TRANSAKSI" — jangan
+    # "NANTI SAJA" polos, karena popup "Data Pelanggan belum lengkap" juga
+    # punya tombol "NANTI SAJA" (yang TIDAK boleh diklik; harus UPDATE).
     for sel in [
-        "button:has-text('NANTI SAJA')",
+        "button:has-text('NANTI SAJA, LANJUT TRANSAKSI')",
         "button:has-text('LANJUT TRANSAKSI')",
-        "button:has-text('Nanti Saja')",
     ]:
         try:
             el = page.locator(sel).first
@@ -553,10 +555,6 @@ async def handle_modal_pelanggan(page: Page, kategori: str, nik: str = "",
             await tutup_modal(page)
             return "TOLAK"
 
-        # 2) Reminder NIB (UM) → NANTI SAJA, LANJUT TRANSAKSI
-        if await lewati_nib_reminder(page):
-            continue
-
         # 3) Pernyataan Persetujuan → centang semua checkbox → SELANJUTNYA
         if await page.locator("text=Pernyataan Persetujuan").count() > 0:
             cb = page.locator("input[type='checkbox']")
@@ -604,6 +602,11 @@ async def handle_modal_pelanggan(page: Page, kategori: str, nik: str = "",
             await klik_pertama(page, ["button:has-text('YA, Perbarui')",
                                       "button:has-text('Perbarui DATA')"], "YA Perbarui")
             await asyncio.sleep(1.5)
+            continue
+
+        # 6b) Reminder NIB (UM) → NANTI SAJA, LANJUT TRANSAKSI (dicek SETELAH
+        #     layar-layar update, agar tidak salah klik "NANTI SAJA" popup lain)
+        if await lewati_nib_reminder(page):
             continue
 
         # 7) Pilih kategori RT/UM (jika ada radio) → LANJUTKAN TRANSAKSI
