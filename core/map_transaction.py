@@ -585,6 +585,14 @@ async def handle_modal_pelanggan(page: Page, kategori: str, nik: str = "",
             await asyncio.sleep(1.5)
             continue
 
+        # 5b) Sukses update → LANJUTKAN KE TRANSAKSI (lanjut ke penjualan)
+        if await page.locator("button:has-text('LANJUTKAN KE TRANSAKSI')").count() > 0:
+            print("  [UPDATE] ✅ Data diperbarui → LANJUTKAN KE TRANSAKSI")
+            await klik_pertama(page, ["button:has-text('LANJUTKAN KE TRANSAKSI')"],
+                               "Lanjutkan ke transaksi")
+            await asyncio.sleep(1.2)
+            continue
+
         # 5) Form update: Tempat Lahir + Tgl/Bln/Thn → SELANJUTNYA
         tl = page.locator(
             "input[placeholder*='tempat lahir'], input[placeholder*='Tempat Lahir']").first
